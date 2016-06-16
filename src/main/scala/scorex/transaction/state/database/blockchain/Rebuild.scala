@@ -39,23 +39,25 @@ class Rebuild(val settingsFilename: String) extends {
   override implicit lazy val consensusModule = new WavesConsensusModule()
   override implicit lazy val transactionModule: SimpleTransactionModule = new WavesTransactionModule()(settings, this)
 
-  val version = 1: Byte
-  val folder = "/tmp/waves/"
-  new File(folder).mkdirs()
-  val oldBlockchainFilename = folder + "bold.dat"
-  val newBlockchainFilename = folder + "bnew.dat"
 
   def rebuild() = {
+    val version = 1: Byte
+    val folder = "/tmp/scorex/waves/data/"
+    new File(folder).mkdirs()
+    val oldBlockchainFilename = folder + "blockchain.dat"
+    val newBlockchainFilename = folder + "bnew.dat"
     val oldBlockchain = new StoredBlockchain(new MVStore.Builder().fileName(oldBlockchainFilename).compress().open())
     val newStorage = new MVStore.Builder().fileName(newBlockchainFilename).compress().open()
     val newBlockchain = new StoredBlockchain(newStorage)
     val newState = new StoredState(newStorage)
-    val transactionsToExclude: Seq[String] = Seq.empty
+    val transactionsToExclude: Seq[String] =
+      Seq("5mB6Yka7atT7PjzV129tkmx3VCxRdNCBTvY8LuLBgWEfaFfATKBX2qZWL9YqszTjArxBWnQDw1PE5WYvGxXEuvPe")
     //map from account address to private key account
     val accounts: Map[String, PrivateKeyAccount] = Map.empty
 
 
-    var ref: Array[Byte] = Block.genesis(settings.genesisTimestamp).uniqueId
+    var ref: Array[Byte] = oldBlockchain.blockAt(1).get.referenceField.value
+
     (1 to oldBlockchain.height()) foreach { height =>
       val oldBlock = oldBlockchain.blockAt(height).get
       val transactions: Seq[Transaction] = oldBlock.transactions
@@ -74,7 +76,6 @@ class Rebuild(val settingsFilename: String) extends {
       newState.processBlock(newBlock)
       newStorage.commit()
     }
-
   }
 
   //checks
