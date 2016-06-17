@@ -40,18 +40,21 @@ class Rebuild(val settingsFilename: String) extends scorex.app.Application {
 
 
   def rebuild() = {
-    val version = 1: Byte
+    //Data to change
+    val transactionsToExclude: Seq[String] =
+      Seq("36vuDUz8RKXAdcpQKPH4bfL6qFdMHGzCaDCNxKGyFda9QKWMXJHP7Ur5bUGe3qSxEqCCSUXmEzMo7uW8WkuubAgZ",
+        "BkQUDsDygQZfyv6pPqiRZyEYPhM3fAUMJnodDFNkqrNmY8h1HKYaFy3sTgBaXJTxggx35mwF2ghrbbnTwvy4Qvn")
+    val accountSeeds: Seq[String] = Seq("9y3B5caxAGbAZNnqYLt7JzzphbsRokhV5kVUVajzf6j7")
     val folder = "/tmp/scorex/waves/data/"
-    new File(folder).mkdirs()
     val newBlockchainFilename = folder + "bnew.dat"
+
+
+    new File(folder).mkdirs()
     new File(newBlockchainFilename).delete()
     val oldBlockchain = transactionModule.blockStorage.history.asInstanceOf[StoredBlockchain]
     val newStorage = new MVStore.Builder().fileName(newBlockchainFilename).compress().open()
     val newBlockchain = new StoredBlockchain(newStorage)
     val newState = new StoredState(newStorage)
-    val transactionsToExclude: Seq[String] =
-      Seq("5mB6Yka7atT7PjzV129tkmx3VCxRdNCBTvY8LuLBgWEfaFfATKBX2qZWL9YqszTjArxBWnQDw1PE5WYvGxXEuvPe")
-    val accountSeeds: Seq[String] = Seq("9y3B5caxAGbAZNnqYLt7JzzphbsRokhV5kVUVajzf6j7")
     val accounts: Map[String, PrivateKeyAccount] = accountSeeds.map { seed =>
       new PrivateKeyAccount(Base58.decode(seed).get)
     }.map(p => p.address -> p).toMap
@@ -71,7 +74,7 @@ class Rebuild(val settingsFilename: String) extends scorex.app.Application {
       val account: PrivateKeyAccount = accounts(oldBlock.signerDataField.value.generator.address)
       implicit val cm: ConsensusModule[NxtLikeConsensusBlockData] = consensusModule
 
-      val newBlock = Block.buildAndSign(version,
+      val newBlock = Block.buildAndSign(oldBlock.versionField.value,
         oldBlock.timestampField.value,
         ref,
         oldBlock.consensusDataField.value.asInstanceOf[NxtLikeConsensusBlockData],
@@ -82,11 +85,16 @@ class Rebuild(val settingsFilename: String) extends scorex.app.Application {
         case Failure(e) => throw e
         case _ =>
       }
-      require(newState.processBlock(newBlock).isSuccess)
+
+      newState.processBlock(newBlock) match {
+        case Failure(e) => throw e
+        case _ =>
+      }
+
       ref = newBlock.uniqueId
       newStorage.commit()
     }
-    println(s"Blockchain recovered with ${oldBlockchain.height()}!")
+    log.info(s"Blockchain recovered with ${oldBlockchain.height()}!")
     stopAll()
   }
 
