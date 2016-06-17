@@ -87,6 +87,7 @@ class Rebuild(val settingsFilename: String) extends scorex.app.Application {
       newStorage.commit()
     }
     println(s"Blockchain recovered with ${oldBlockchain.height()}!")
+    stopAll()
   }
 
   //checks
