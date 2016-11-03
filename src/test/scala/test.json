@@ -1,0 +1,19 @@
+{
+  "name": "MyAsset1",
+  "quantity": 1000000,
+  "description": "string",
+  "sender": "3Mxer4SkSwk4WTmn4zB5Zs54JU1LegiXSYw",
+  "decimals": 0,
+  "reissuable": false,
+  "fee": 1000000000
+}
+
+
+{
+  "sender": "3Mxer4SkSwk4WTmn4zB5Zs54JU1LegiXSYw",
+  "recipient": "3Mxer4SkSwk4WTmn4zB5Zs54JU1LegiXSYw",
+  "amount": 11,
+  "feeAmount": 100000,
+  "attachment": "base"
+}
+
