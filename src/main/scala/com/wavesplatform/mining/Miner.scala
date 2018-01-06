@@ -1,7 +1,7 @@
 package com.wavesplatform.mining
 
 import cats.data.EitherT
-import com.wavesplatform.UtxPool
+import com.wavesplatform.{UtxPool, UtxPoolImpl}
 import com.wavesplatform.features.{BlockchainFeatureStatus, BlockchainFeatures, FeatureProvider}
 import com.wavesplatform.metrics.{BlockStats, HistogramExt, Instrumented}
 import com.wavesplatform.network._
@@ -74,6 +74,8 @@ class MinerImpl(
 
   private def ngEnabled: Boolean = featureProvider.featureActivationHeight(BlockchainFeatures.NG.id).exists(history.height > _ + 1)
 
+  var all:Seq[Transaction] = Seq()
+
   private def generateOneBlockTask(account: PrivateKeyAccount, balance: Long)(delay: FiniteDuration): Task[Either[String, Block]] = Task {
     history.read { implicit l =>
       // should take last block right at the time of mining since microblocks might have been added
@@ -83,9 +85,12 @@ class MinerImpl(
       val greatGrandParentTimestamp = history.parent(lastBlock, 2).map(_.timestamp)
       val referencedBlockInfo = history.bestLastBlockInfo(System.currentTimeMillis() - minMicroBlockDurationMills).get
       val pc = allChannels.size()
-      lazy val currentTime = timeService.correctedTime()
+      lazy val currentTime: Long = nextBlockGenerationTime(height, stateReader, blockchainSettings.functionalitySettings, lastBlock, account, featureProvider)
+        .map(_._2).getOrElse(timeService.correctedTime()) + 1000
+
       lazy val h = calcHit(referencedBlockInfo.consensus, account)
       lazy val t = calcTarget(referencedBlockInfo.timestamp, referencedBlockInfo.consensus.baseTarget, currentTime, balance)
+
       measureSuccessful(blockBuildTimeStats, for {
         _ <- Either.cond(pc >= minerSettings.quorum, (), s"Quorum not available ($pc/${minerSettings.quorum}, not forging block with ${account.address}")
         _ <- Either.cond(h < t, (), s"${System.currentTimeMillis()}: Hit $h was NOT less than target $t, not forging block with ${account.address}")
@@ -98,7 +103,13 @@ class MinerImpl(
           val consensusData = NxtLikeConsensusBlockData(btg, ByteStr(gs))
           val sortInBlock = history.height() <= blockchainSettings.functionalitySettings.dontRequireSortedTransactionsAfter
           val txAmount = if (ngEnabled) minerSettings.maxTransactionsInKeyBlock else ClassicAmountOfTxsInBlock
-          val unconfirmed = utx.packUnconfirmed(txAmount, sortInBlock)
+
+          if(all.isEmpty) {
+            all = utx.all
+            println(s"!!! ${all.size}")
+          }
+          all.foreach(tx => utx.putIfNew(tx))
+          val unconfirmed = utx.asInstanceOf[UtxPoolImpl].packUnconfirmed2(4000, sortInBlock, currentTime)
 
           val features = if (version > 2) settings.featuresSettings.supported
             .filter(featureProvider.featureStatus(_, height) == BlockchainFeatureStatus.Undefined)

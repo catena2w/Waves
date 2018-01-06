@@ -69,6 +69,7 @@ class UtxPoolImpl(time: Time,
   private val putRequestStats = Kamon.metrics.counter("utx-pool-put-if-new")
 
   private def removeExpired(currentTs: Long): Unit = {
+/*
     def isExpired(tx: Transaction) = (currentTs - tx.timestamp).millis > utxSettings.maxTransactionAge
 
     transactions
@@ -80,6 +81,7 @@ class UtxPoolImpl(time: Time,
         pessimisticPortfolios.remove(tx.id())
         utxPoolSizeStats.decrement()
       }
+*/
   }
 
   override def putIfNew(tx: Transaction): Either[ValidationError, Transaction] = {
@@ -148,6 +150,34 @@ class UtxPoolImpl(time: Time,
   override def size: Int = transactions.size
 
   override def transactionById(transactionId: ByteStr): Option[Transaction] = Option(transactions.get(transactionId))
+
+  def packUnconfirmed2(max: Int, sortInBlock: Boolean, currentTs: Long): Seq[Transaction] = {
+    val s = stateReader()
+    val differ = TransactionDiffer(fs, history.lastBlockTimestamp(), currentTs, s.height) _
+    val (invalidTxs, reversedValidTxs, _) = transactions
+      .values.asScala.toSeq
+      .sorted(TransactionsOrdering.InUTXPool)
+      .foldLeft((Seq.empty[ByteStr], Seq.empty[Transaction], Monoid[Diff].empty)) {
+        case ((invalid, valid, diff), tx) if valid.size <= max =>
+          differ(composite(diff.asBlockDiff, s), tx) match {
+            case Right(newDiff) if valid.size < max =>
+              (invalid, tx +: valid, Monoid.combine(diff, newDiff))
+            case Right(_) =>
+              (invalid, valid, diff)
+            case Left(_) =>
+              (tx.id() +: invalid, valid, diff)
+          }
+        case (r, _) => r
+      }
+
+    invalidTxs.foreach { itx =>
+      transactions.remove(itx)
+      pessimisticPortfolios.remove(itx)
+    }
+    if (sortInBlock)
+      reversedValidTxs.sorted(TransactionsOrdering.InBlock)
+    else reversedValidTxs.reverse
+  }
 
   override def packUnconfirmed(max: Int, sortInBlock: Boolean): Seq[Transaction] = {
     val currentTs = time.correctedTime()
